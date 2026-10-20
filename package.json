@@ -4,7 +4,6 @@
   "description": "Fast search for text, files, folders and symbols powered by ripgrep, with code preview, saved scopes and include/exclude filters.",
   "version": "0.1.0",
   "publisher": "RiccardoFilippozzi",
-  "author": "RiccardoFilippozzi",
   "license": "MIT",
   "repository": {
     "type": "git",
