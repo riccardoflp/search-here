@@ -1,0 +1,7 @@
+/node_modules/
+/dist/
+/out/
+/.vscode-test/
+*.vsix
+*.js.map
+test-fixtures/workspace/.vscode/

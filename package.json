@@ -1,0 +1,363 @@
+{
+  "name": "search-here",
+  "displayName": "Search Here",
+  "description": "Fast search for text, files, folders and symbols powered by ripgrep, with code preview, saved scopes and include/exclude filters.",
+  "version": "0.1.0",
+  "publisher": "RiccardoFilippozzi",
+  "author": "RiccardoFilippozzi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/riccardoflp/search-here.git"
+  },
+  "bugs": {
+    "url": "https://github.com/riccardoflp/search-here/issues"
+  },
+  "homepage": "https://github.com/riccardoflp/search-here#readme",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#16202f",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "search",
+    "find",
+    "ripgrep",
+    "grep",
+    "fuzzy",
+    "file search",
+    "preview",
+    "symbols"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "searchHere.open",
+        "title": "Open Search",
+        "category": "Search Here",
+        "icon": "$(search)"
+      },
+      {
+        "command": "searchHere.openView",
+        "title": "Open Search in Panel",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.openEditor",
+        "title": "Open Search in Editor Tab",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.openNewEditor",
+        "title": "Open Search in New Editor Tab",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.moveToEditor",
+        "title": "Move to Editor Tab",
+        "category": "Search Here",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "searchHere.moveToPanel",
+        "title": "Move to Panel",
+        "category": "Search Here",
+        "icon": "$(layout-panel)"
+      },
+      {
+        "command": "searchHere.quickSearch",
+        "title": "Quick Search",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.searchInFolder",
+        "title": "Search Here",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.includeInSearch",
+        "title": "Include in Search",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.excludeFromSearch",
+        "title": "Exclude from Search",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.excludeAlways",
+        "title": "Always Exclude (Workspace Settings)",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.clearFilters",
+        "title": "Clear Filters",
+        "category": "Search Here"
+      },
+      {
+        "command": "searchHere.quickNextMode",
+        "title": "Quick Search: Next Mode",
+        "category": "Search Here"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "searchHere.explorer",
+        "label": "Search Here"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "submenu": "searchHere.explorer",
+          "group": "4_search@10"
+        }
+      ],
+      "searchHere.explorer": [
+        {
+          "command": "searchHere.searchInFolder",
+          "group": "1_search@1"
+        },
+        {
+          "command": "searchHere.includeInSearch",
+          "group": "2_filters@1"
+        },
+        {
+          "command": "searchHere.excludeFromSearch",
+          "group": "2_filters@2"
+        },
+        {
+          "command": "searchHere.excludeAlways",
+          "group": "2_filters@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "searchHere.searchInFolder",
+          "when": "false"
+        },
+        {
+          "command": "searchHere.includeInSearch",
+          "when": "false"
+        },
+        {
+          "command": "searchHere.excludeFromSearch",
+          "when": "false"
+        },
+        {
+          "command": "searchHere.excludeAlways",
+          "when": "false"
+        },
+        {
+          "command": "searchHere.quickNextMode",
+          "when": "false"
+        },
+        {
+          "command": "searchHere.moveToEditor",
+          "when": "view.searchHere.view.visible"
+        },
+        {
+          "command": "searchHere.moveToPanel",
+          "when": "activeWebviewPanelId == 'searchHere.editor'"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "searchHere.moveToEditor",
+          "when": "view == searchHere.view",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "searchHere.moveToPanel",
+          "when": "activeWebviewPanelId == 'searchHere.editor'",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "searchHerePanel",
+          "title": "Search Here",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "searchHerePanel": [
+        {
+          "type": "webview",
+          "id": "searchHere.view",
+          "name": "Search Here"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "searchHere.open",
+        "key": "ctrl+alt+f",
+        "mac": "ctrl+alt+f"
+      },
+      {
+        "command": "searchHere.quickSearch",
+        "key": "ctrl+alt+p",
+        "mac": "ctrl+alt+p",
+        "when": "!searchHere.quickOpen"
+      },
+      {
+        "command": "searchHere.quickNextMode",
+        "key": "ctrl+alt+p",
+        "mac": "ctrl+alt+p",
+        "when": "searchHere.quickOpen && inQuickOpen"
+      }
+    ],
+    "configuration": {
+      "title": "Search Here",
+      "properties": {
+        "searchHere.defaultOpen": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "editor",
+            "dialog"
+          ],
+          "enumDescriptions": [
+            "The search view in the bottom panel, next to the Terminal",
+            "The search view in an editor tab (see `#searchHere.editorTab#`)",
+            "The quick search dialog, like Ctrl+P, previewing results in the editor"
+          ],
+          "default": "panel",
+          "markdownDescription": "What \"Search Here: Open Search\" (`Ctrl+Alt+F`) and the status bar button open."
+        },
+        "searchHere.editorTab": {
+          "type": "string",
+          "enum": [
+            "reuse",
+            "new"
+          ],
+          "enumDescriptions": [
+            "Focus the search tab that is already open (the last used one)",
+            "Open a new search tab every time"
+          ],
+          "default": "reuse",
+          "description": "When the search opens in an editor tab, reuse an existing tab or open a new one."
+        },
+        "searchHere.showStatusBarItem": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a Search button in the status bar."
+        },
+        "searchHere.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Globs that are always excluded, on top of the view's filters. Same syntax as the *Exclude* field: `name` anywhere, `./path` from the root, `folder/` folders only, `**/*.min.js` globs."
+        },
+        "searchHere.useVSCodeExcludes": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Initial state of the toggle that applies VS Code's `files.exclude` and `search.exclude`."
+        },
+        "searchHere.respectGitignore": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Initial state of the toggle that respects `.gitignore`, `.ignore` and `.rgignore`."
+        },
+        "searchHere.maxResults": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 100,
+          "description": "Maximum number of matching lines returned by a text search."
+        },
+        "searchHere.maxFileSize": {
+          "type": "string",
+          "default": "10M",
+          "markdownDescription": "Largest file size to search (ripgrep format, e.g. `500K`, `10M`)."
+        },
+        "searchHere.followSymlinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Follow symbolic links while searching."
+        },
+        "searchHere.ripgrepPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a custom ripgrep executable. Empty = the one bundled with VS Code."
+        },
+        "searchHere.scopes": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Shareable scopes (e.g. in the project's `.vscode/settings.json`). They show up as tabs in the search view.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Tab name"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Folders or files (relative to the root) to search in"
+              },
+              "include": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Globs to include"
+              },
+              "exclude": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Globs to exclude"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p webview",
+    "package": "npm run typecheck && node esbuild.mjs --production && vsce package --no-dependencies",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "compile-tests": "tsc -p tsconfig.test.json",
+    "pretest": "npm run build && npm run compile-tests",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/codicons": "^0.0.36",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "highlight.js": "^11.10.0",
+    "mocha": "^12.0.3",
+    "typescript": "^5.6.0"
+  }
+}
