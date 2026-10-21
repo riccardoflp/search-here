@@ -84,8 +84,24 @@ export interface DirEntry {
   dir: boolean;
 }
 
+/**
+ * Bits of a token style holding the index of its color in the theme CSS (`.mtk<index>`); the
+ * font style is above them (1 italic, 2 bold, 4 underline, 8 strikethrough).
+ */
+export const STYLE_COLOR_BITS = 9;
+
 export type PreviewData =
-  | { kind: 'file'; path: string; rel: string; content: string }
+  | {
+      kind: 'file';
+      path: string;
+      rel: string;
+      content: string;
+      /**
+       * Syntax tokens of each line, as pairs of start column and style; missing when no grammar
+       * applies, and lines past its end are not tokenized.
+       */
+      tokens?: number[][];
+    }
   | { kind: 'folder'; path: string; rel: string; entries: DirEntry[]; truncated: boolean }
   | { kind: 'error'; path: string; rel: string; message: string };
 
@@ -98,7 +114,7 @@ export type ToWebview =
   | { type: 'done'; searchId: number; stats: SearchStats }
   | { type: 'preview'; reqId: number; data: PreviewData }
   | { type: 'focus'; query?: string }
-  /** Syntax colors of the active color theme, as CSS; empty to use the defaults. */
+  /** Token colors of the active color theme, as CSS; previews tokenized before it are out of date. */
   | { type: 'syntax'; css: string };
 
 export type FromWebview =

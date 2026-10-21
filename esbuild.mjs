@@ -15,6 +15,8 @@ const common = {
 mkdirSync('dist/codicons', { recursive: true });
 cpSync('node_modules/@vscode/codicons/dist/codicon.css', 'dist/codicons/codicon.css');
 cpSync('node_modules/@vscode/codicons/dist/codicon.ttf', 'dist/codicons/codicon.ttf');
+// The regular expression engine of the TextMate grammars, loaded by the extension.
+cpSync('node_modules/vscode-oniguruma/release/onig.wasm', 'dist/onig.wasm');
 
 const contexts = await Promise.all([
   esbuild.context({

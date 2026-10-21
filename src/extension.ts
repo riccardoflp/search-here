@@ -21,7 +21,7 @@ export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
   const index = new FileIndex();
   const store = new Store(ctx);
   const engine = new SearchEngine(index);
-  const theme = new SyntaxTheme();
+  const theme = new SyntaxTheme(ctx.extensionPath);
   const services: Services = { ctx, store, engine, theme };
   const controllers = new Set<SearchController>();
   ctx.subscriptions.push(index, store, theme);

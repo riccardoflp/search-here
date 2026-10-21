@@ -648,6 +648,8 @@ body.dragging .splitter {
   flex: 1;
   overflow: auto;
   position: relative;
+  /* The editor background, which the syntax colors of the theme are made for. */
+  background: var(--vscode-editor-background);
 }
 
 .preview-empty {
@@ -668,6 +670,7 @@ body.dragging .splitter {
 }
 
 .code-view {
+  color: var(--vscode-editor-foreground);
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
   font-weight: var(--vscode-editor-font-weight);
@@ -744,157 +747,21 @@ body.dragging .splitter {
   padding: 2px 12px;
 }
 
-/* ------------------------------------------------------------------ syntax colors (Dark+ / Light+) */
-/* Used until the extension sends the colors of the active theme, or when it cannot read them. */
+/* ------------------------------------------------------------------ syntax colors */
+/* The colors (.mtk<index>) come from the active theme, sent by the extension. */
 
-.vscode-dark .hljs-keyword,
-.vscode-dark .hljs-literal,
-.vscode-dark .hljs-selector-tag,
-.vscode-dark .hljs-tag,
-.vscode-dark .hljs-name,
-.vscode-dark .hljs-meta .hljs-keyword {
-  color: #569cd6;
-}
-.vscode-dark .hljs-built_in,
-.vscode-dark .hljs-type,
-.vscode-dark .hljs-title.class_,
-.vscode-dark .hljs-class .hljs-title {
-  color: #4ec9b0;
-}
-.vscode-dark .hljs-title.function_,
-.vscode-dark .hljs-function .hljs-title {
-  color: #dcdcaa;
-}
-.vscode-dark .hljs-string,
-.vscode-dark .hljs-meta .hljs-string {
-  color: #ce9178;
-}
-.vscode-dark .hljs-number {
-  color: #b5cea8;
-}
-.vscode-dark .hljs-comment,
-.vscode-dark .hljs-quote {
-  color: #6a9955;
-}
-.vscode-dark .hljs-attr,
-.vscode-dark .hljs-attribute,
-.vscode-dark .hljs-variable,
-.vscode-dark .hljs-template-variable,
-.vscode-dark .hljs-params,
-.vscode-dark .hljs-property {
-  color: #9cdcfe;
-}
-.vscode-dark .hljs-regexp,
-.vscode-dark .hljs-symbol {
-  color: #d16969;
-}
-.vscode-dark .hljs-meta,
-.vscode-dark .hljs-selector-class,
-.vscode-dark .hljs-selector-id {
-  color: #d7ba7d;
-}
-.vscode-dark .hljs-section,
-.vscode-dark .hljs-strong {
-  color: #569cd6;
-  font-weight: bold;
-}
-.vscode-dark .hljs-addition {
-  color: #b5cea8;
-}
-.vscode-dark .hljs-deletion {
-  color: #ce9178;
-}
-.vscode-dark .hljs-keyword.sh-control {
-  color: #c586c0;
-}
-
-.vscode-light .hljs-keyword,
-.vscode-light .hljs-literal,
-.vscode-light .hljs-meta .hljs-keyword {
-  color: #0000ff;
-}
-.vscode-light .hljs-tag,
-.vscode-light .hljs-name,
-.vscode-light .hljs-selector-tag {
-  color: #800000;
-}
-.vscode-light .hljs-built_in,
-.vscode-light .hljs-type,
-.vscode-light .hljs-title.class_,
-.vscode-light .hljs-class .hljs-title {
-  color: #267f99;
-}
-.vscode-light .hljs-title.function_,
-.vscode-light .hljs-function .hljs-title {
-  color: #795e26;
-}
-.vscode-light .hljs-string,
-.vscode-light .hljs-meta .hljs-string {
-  color: #a31515;
-}
-.vscode-light .hljs-number {
-  color: #098658;
-}
-.vscode-light .hljs-comment,
-.vscode-light .hljs-quote {
-  color: #008000;
-}
-.vscode-light .hljs-attr,
-.vscode-light .hljs-attribute,
-.vscode-light .hljs-variable,
-.vscode-light .hljs-template-variable,
-.vscode-light .hljs-params,
-.vscode-light .hljs-property {
-  color: #001080;
-}
-.vscode-light .hljs-regexp,
-.vscode-light .hljs-symbol {
-  color: #811f3f;
-}
-.vscode-light .hljs-meta,
-.vscode-light .hljs-selector-class,
-.vscode-light .hljs-selector-id {
-  color: #800000;
-}
-.vscode-light .hljs-section,
-.vscode-light .hljs-strong {
-  color: #0000ff;
-  font-weight: bold;
-}
-.vscode-light .hljs-addition {
-  color: #098658;
-}
-.vscode-light .hljs-deletion {
-  color: #a31515;
-}
-.vscode-light .hljs-keyword.sh-control {
-  color: #af00db;
-}
-
-.vscode-high-contrast .hljs-keyword,
-.vscode-high-contrast .hljs-literal {
-  color: #569cd6;
-}
-.vscode-high-contrast .hljs-string {
-  color: #ce9178;
-}
-.vscode-high-contrast .hljs-comment {
-  color: #7ca668;
-}
-.vscode-high-contrast .hljs-title.function_ {
-  color: #dcdcaa;
-}
-.vscode-high-contrast-light .hljs-keyword,
-.vscode-high-contrast-light .hljs-literal {
-  color: #0f4a85;
-}
-.vscode-high-contrast-light .hljs-string {
-  color: #0f4a85;
-}
-.vscode-high-contrast-light .hljs-comment {
-  color: #515151;
-}
-
-.hljs-emphasis {
+.code-view .mtki {
   font-style: italic;
+}
+.code-view .mtkb {
+  font-weight: bold;
+}
+.code-view .mtku {
+  text-decoration: underline;
+}
+.code-view .mtks {
+  text-decoration: line-through;
+}
+.code-view .mtku.mtks {
+  text-decoration: underline line-through;
 }

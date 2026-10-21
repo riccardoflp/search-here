@@ -1,6 +1,4 @@
-import hljs from 'highlight.js/lib/common';
-import dockerfile from 'highlight.js/lib/languages/dockerfile';
-import powershell from 'highlight.js/lib/languages/powershell';
+import { STYLE_COLOR_BITS } from '../src/protocol';
 import type {
   FromWebview,
   MatchItem,
@@ -14,9 +12,6 @@ import type {
   SymbolItem,
   ToWebview,
 } from '../src/protocol';
-
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('dockerfile', dockerfile);
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: unknown): void;
@@ -871,64 +866,28 @@ pHead.addEventListener('click', (e) => {
   }
 });
 
-const LANG_ALIASES: Record<string, string> = {
-  tsx: 'typescript', mts: 'typescript', cts: 'typescript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  vue: 'xml', svelte: 'xml', htm: 'xml', html: 'xml', xaml: 'xml', csproj: 'xml', props: 'xml', svg: 'xml', resx: 'xml',
-  jsonc: 'json', json5: 'json', toml: 'ini', cfg: 'ini', conf: 'ini', properties: 'ini', env: 'bash', zsh: 'bash',
-  psm1: 'powershell', psd1: 'powershell', gradle: 'kotlin', kts: 'kotlin', h: 'cpp', hpp: 'cpp', cc: 'cpp', mdx: 'markdown',
-};
+const FONT_STYLE_CLASSES: [number, string][] = [
+  [1, 'mtki'],
+  [2, 'mtkb'],
+  [4, 'mtku'],
+  [8, 'mtks'],
+];
 
-function guessLanguage(path: string): string | undefined {
-  const base = path.split(/[\\/]/).pop()!.toLowerCase();
-  if (base === 'dockerfile' || base.startsWith('dockerfile.')) return 'dockerfile';
-  if (base === 'makefile' || base === 'gnumakefile') return 'makefile';
-  const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
-  const name = LANG_ALIASES[ext] ?? ext;
-  return name && hljs.getLanguage(name) ? name : undefined;
-}
-
-const CONTROL_KEYWORDS = new RegExp(
-  `<span class="hljs-keyword">(${[
-    'if', 'else', 'elif', 'elsif', 'unless', 'then', 'fi', 'for', 'foreach', 'while', 'until', 'do', 'done', 'loop',
-    'switch', 'case', 'esac', 'default', 'match', 'when', 'break', 'continue', 'return', 'goto', 'try', 'catch',
-    'except', 'finally', 'throw', 'raise', 'yield', 'await', 'import', 'export', 'from', 'as', 'using', 'include',
-    'require', 'pass', 'defer', 'go', 'select', 'fallthrough',
-  ].join('|')})</span>`,
-  'g',
-);
-
-/** Tells control flow keywords apart: themes usually color them differently from declarations. */
-function markControlKeywords(html: string): string {
-  return html.replace(CONTROL_KEYWORDS, '<span class="hljs-keyword sh-control">$1</span>');
-}
-
-/** Splits highlight.js HTML into per-line HTML, closing and reopening spans at line breaks. */
-function splitHtmlLines(html: string): string[] {
-  const out: string[] = [];
-  const stack: string[] = [];
-  let cur = '';
-  const re = /(<span[^>]*>)|(<\/span>)|(\n)|([^<\n]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    if (m[1]) {
-      stack.push(m[1]);
-      cur += m[1];
-    } else if (m[2]) {
-      stack.pop();
-      cur += m[2];
-    } else if (m[3]) {
-      out.push(cur + '</span>'.repeat(stack.length));
-      cur = stack.join('');
-    } else {
-      cur += m[4];
-    }
+/** One line of code as HTML, with the token styles computed by the extension. */
+function renderTokens(text: string, tokens: number[] | undefined): string {
+  if (!tokens?.length) return esc(text);
+  let html = esc(text.slice(0, tokens[0]));
+  for (let i = 0; i < tokens.length; i += 2) {
+    const part = esc(text.slice(tokens[i], tokens[i + 2] ?? text.length));
+    const color = tokens[i + 1] & ((1 << STYLE_COLOR_BITS) - 1);
+    const fontStyle = tokens[i + 1] >> STYLE_COLOR_BITS;
+    const classes = [`mtk${color}`, ...FONT_STYLE_CLASSES.filter(([bit]) => fontStyle & bit).map(([, c]) => c)];
+    html += `<span class="${classes.join(' ')}">${part}</span>`;
   }
-  out.push(cur + '</span>'.repeat(stack.length));
-  return out;
+  return html;
 }
 
 const MAX_RENDERED_LINES = 4000;
-const MAX_HIGHLIGHT_CHARS = 400_000;
 
 function renderPreview(data: PreviewData, target: PreviewTarget): void {
   if (data.kind === 'error') {
@@ -956,19 +915,7 @@ function renderPreview(data: PreviewData, target: PreviewTarget): void {
     start = Math.max(0, line - MAX_RENDERED_LINES / 2);
     end = Math.min(lines.length, start + MAX_RENDERED_LINES);
   }
-  const slice = lines.slice(start, end);
-  const text = slice.join('\n');
-  const lang = guessLanguage(data.path);
-  let html: string[];
-  if (lang && text.length <= MAX_HIGHLIGHT_CHARS) {
-    try {
-      html = splitHtmlLines(markControlKeywords(hljs.highlight(text, { language: lang, ignoreIllegals: true }).value));
-    } catch {
-      html = slice.map(esc);
-    }
-  } else {
-    html = slice.map(esc);
-  }
+  const html = lines.slice(start, end).map((text, i) => renderTokens(text, data.tokens?.[start + i]));
   const width = String(end).length;
   let out = '';
   if (start > 0) out += `<div class="cut">… ${start} lines above</div>`;
@@ -976,7 +923,7 @@ function renderPreview(data: PreviewData, target: PreviewTarget): void {
     out += `<div class="ln" data-ln="${start + i}"><span class="gutter">${String(start + i + 1).padStart(width, ' ')}</span><span class="code">${html[i] || ' '}</span></div>`;
   }
   if (end < lines.length) out += `<div class="cut">… ${lines.length - end} more lines</div>`;
-  pBody.innerHTML = `<div class="code-view${lang ? ' hljs' : ''}">${out}</div>`;
+  pBody.innerHTML = `<div class="code-view">${out}</div>`;
   shown = { path: data.path, data, start, end };
 
   // Mark every match of this file that is in the results.
@@ -1114,7 +1061,7 @@ $('splitter').addEventListener('mousedown', (e) => {
 
 // ====================================================================== messages
 
-// Syntax colors of the user's theme. A constructed style sheet, since the CSP forbids inline styles.
+// Token colors of the user's theme. A constructed style sheet, since the CSP forbids inline styles.
 const syntaxSheet = new CSSStyleSheet();
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, syntaxSheet];
 
@@ -1163,6 +1110,12 @@ window.addEventListener('message', (event: MessageEvent<ToWebview>) => {
       break;
     case 'syntax':
       syntaxSheet.replaceSync(msg.css);
+      // The previews already loaded were tokenized with the colors of the previous theme.
+      previewCache.clear();
+      if (shown) {
+        shown = null;
+        showPreview(currentTarget);
+      }
       break;
     case 'focus':
       if (msg.query !== undefined && msg.query !== options.query) {

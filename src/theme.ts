@@ -1,68 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as oniguruma from 'vscode-oniguruma';
+import { INITIAL, IOnigLib, IRawTheme, parseRawGrammar, Registry, StateStack } from 'vscode-textmate';
 import * as vscode from 'vscode';
+import { Grammars } from './grammars';
+import { STYLE_COLOR_BITS } from './protocol';
 
-export interface TokenRule {
-  scope?: string | string[];
-  settings?: { foreground?: string; fontStyle?: string };
-}
-
-export interface TokenStyle {
-  color?: string;
-  fontStyle?: string;
-}
-
-/**
- * highlight.js classes and the TextMate scopes that color them in VS Code themes, most
- * specific first: the first scope the theme has a color for is used.
- */
-const CATEGORIES: { selector: string; scopes: string[]; fontStyle?: string }[] = [
-  { selector: '.hljs-keyword', scopes: ['storage.type', 'keyword'] },
-  { selector: '.hljs-keyword.sh-control', scopes: ['keyword.control'] },
-  { selector: '.hljs-built_in', scopes: ['support.class', 'support.function'] },
-  { selector: '.hljs-type', scopes: ['entity.name.type', 'support.type'] },
-  { selector: '.hljs-literal', scopes: ['constant.language'] },
-  { selector: '.hljs-number', scopes: ['constant.numeric'] },
-  { selector: '.hljs-operator', scopes: ['keyword.operator'] },
-  { selector: '.hljs-punctuation', scopes: ['punctuation'] },
-  { selector: '.hljs-property', scopes: ['variable.other.property', 'variable'] },
-  { selector: '.hljs-regexp', scopes: ['string.regexp'] },
-  { selector: '.hljs-string', scopes: ['string.quoted', 'string'] },
-  { selector: '.hljs-char.escape_', scopes: ['constant.character.escape'] },
-  { selector: '.hljs-subst', scopes: ['meta.template.expression'] },
-  { selector: '.hljs-symbol', scopes: ['constant.other.symbol', 'constant.other'] },
-  { selector: '.hljs-variable, .hljs-template-variable', scopes: ['variable.other.readwrite', 'variable'] },
-  { selector: '.hljs-variable.language_', scopes: ['variable.language'] },
-  { selector: '.hljs-variable.constant_', scopes: ['variable.other.constant', 'constant'] },
-  { selector: '.hljs-title', scopes: ['entity.name'] },
-  { selector: '.hljs-title.class_', scopes: ['entity.name.type.class', 'entity.name.type', 'entity.name.class'] },
-  { selector: '.hljs-title.class_.inherited__', scopes: ['entity.other.inherited-class', 'entity.name.type'] },
-  { selector: '.hljs-title.function_', scopes: ['entity.name.function'] },
-  { selector: '.hljs-params', scopes: ['variable.parameter'] },
-  { selector: '.hljs-comment', scopes: ['comment'] },
-  { selector: '.hljs-doctag', scopes: ['storage.type.class.jsdoc', 'comment.block.documentation'] },
-  { selector: '.hljs-meta', scopes: ['meta.preprocessor', 'keyword.control.directive'] },
-  { selector: '.hljs-meta .hljs-keyword', scopes: ['keyword.control.directive', 'keyword'] },
-  { selector: '.hljs-meta .hljs-string', scopes: ['string'] },
-  { selector: '.hljs-section', scopes: ['markup.heading', 'entity.name.section'] },
-  { selector: '.hljs-tag', scopes: ['punctuation.definition.tag'] },
-  { selector: '.hljs-name', scopes: ['entity.name.tag'] },
-  { selector: '.hljs-attr', scopes: ['entity.other.attribute-name', 'support.type.property-name'] },
-  { selector: '.hljs-attribute', scopes: ['support.type.property-name', 'entity.other.attribute-name'] },
-  { selector: '.hljs-selector-tag', scopes: ['entity.name.tag.css', 'entity.name.tag'] },
-  { selector: '.hljs-selector-id', scopes: ['entity.other.attribute-name.id.css', 'entity.other.attribute-name'] },
-  { selector: '.hljs-selector-class', scopes: ['entity.other.attribute-name.class.css', 'entity.other.attribute-name'] },
-  { selector: '.hljs-selector-attr, .hljs-selector-pseudo', scopes: ['entity.other.attribute-name.pseudo-class.css', 'entity.other.attribute-name'] },
-  { selector: '.hljs-template-tag', scopes: ['punctuation.definition.template-expression', 'keyword'] },
-  { selector: '.hljs-bullet', scopes: ['punctuation.definition.list.begin.markdown', 'markup.list'] },
-  { selector: '.hljs-code', scopes: ['markup.inline.raw', 'markup.raw'] },
-  { selector: '.hljs-emphasis', scopes: ['markup.italic'], fontStyle: 'italic' },
-  { selector: '.hljs-strong', scopes: ['markup.bold'], fontStyle: 'bold' },
-  { selector: '.hljs-link', scopes: ['markup.underline.link'] },
-  { selector: '.hljs-quote', scopes: ['markup.quote'] },
-  { selector: '.hljs-addition', scopes: ['markup.inserted'] },
-  { selector: '.hljs-deletion', scopes: ['markup.deleted'] },
-];
+export type TokenRule = IRawTheme['settings'][number];
 
 /** Scopes behind the shorthand keys of `editor.tokenColorCustomizations`, as VS Code defines them. */
 const CUSTOMIZATION_SCOPES: Record<string, string[]> = {
@@ -93,22 +37,38 @@ const THEME_SETTINGS = [
   'editor.tokenColorCustomizations',
 ];
 
-const COLOR = /^#[0-9a-f]{3,8}$/i;
+/** Time spent tokenizing one file: the lines after it are shown without colors. */
+const TOKENIZE_BUDGET_MS = 1000;
+/** How long to tokenize before letting other work of the extension host run. */
+const TOKENIZE_SLICE_MS = 10;
+
+/** Layout of the token metadata of vscode-textmate. */
+const FONT_STYLE_MASK = 0x7800;
+const FONT_STYLE_OFFSET = 11;
+const FOREGROUND_MASK = 0xff8000;
+const FOREGROUND_OFFSET = 15;
+
+interface Syntax {
+  registry: Registry;
+  grammars: Grammars;
+  css: string;
+}
 
 /**
- * Turns the syntax colors of the active color theme into CSS for the highlight.js classes of
- * the preview, so that code looks as it does in the editor.
+ * Colors code as the editor does: the file is tokenized with the TextMate grammars of the
+ * installed extensions and styled with the token colors of the active color theme.
  */
 export class SyntaxTheme implements vscode.Disposable {
-  private css?: Promise<string>;
+  private syntax?: Promise<Syntax | undefined>;
   private generation = 0;
   private readonly emitter = new vscode.EventEmitter<string>();
+  /** Fires the CSS of the new theme; tokens computed before it no longer match it. */
   readonly onDidChange = this.emitter.event;
   private readonly subs: vscode.Disposable[];
 
-  constructor() {
+  constructor(private readonly extensionPath: string) {
     const refresh = () => {
-      this.css = undefined;
+      this.syntax = undefined;
       const generation = ++this.generation;
       void this.get().then((css) => {
         if (generation === this.generation) this.emitter.fire(css);
@@ -124,9 +84,48 @@ export class SyntaxTheme implements vscode.Disposable {
     ];
   }
 
-  /** CSS for the active theme, or '' when its colors cannot be read (the preview then keeps its default colors). */
-  get(): Promise<string> {
-    return (this.css ??= buildCss().catch(() => ''));
+  /** CSS for the token colors of the active theme (`.mtk<index>` classes), or '' when it cannot be read. */
+  async get(): Promise<string> {
+    return (await this.load())?.css ?? '';
+  }
+
+  /** The tokens of each line of `text`, as the `tokens` of a file preview describes them. */
+  async tokenize(file: string, text: string, languageId?: string): Promise<number[][] | undefined> {
+    try {
+      const syntax = await this.load();
+      if (!syntax) return undefined;
+      const lines = text.split(/\r?\n/);
+      const scope = syntax.grammars.scopeFor(file, lines[0], languageId);
+      const grammar = scope && (await syntax.registry.loadGrammar(scope));
+      if (!grammar) return undefined;
+      const maxLineLength = vscode.workspace.getConfiguration('editor').get<number>('maxTokenizationLineLength') ?? 20000;
+      const deadline = Date.now() + TOKENIZE_BUDGET_MS;
+      let sliceEnd = Date.now() + TOKENIZE_SLICE_MS;
+      let state: StateStack = INITIAL;
+      const out: number[][] = [];
+      for (const line of lines) {
+        if (Date.now() > sliceEnd) {
+          if (Date.now() > deadline) break;
+          await new Promise((resolve) => setImmediate(resolve));
+          sliceEnd = Date.now() + TOKENIZE_SLICE_MS;
+        }
+        // Like the editor, very long lines are not tokenized and keep the state of the previous line.
+        if (line.length > maxLineLength) {
+          out.push([]);
+          continue;
+        }
+        const result = grammar.tokenizeLine2(line, state, 500);
+        if (!result.stoppedEarly) state = result.ruleStack;
+        out.push(lineStyles(result.tokens));
+      }
+      return out;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private load(): Promise<Syntax | undefined> {
+    return (this.syntax ??= loadSyntax(this.extensionPath).catch(() => undefined));
   }
 
   dispose(): void {
@@ -134,22 +133,58 @@ export class SyntaxTheme implements vscode.Disposable {
   }
 }
 
-async function buildCss(): Promise<string> {
+/** Token pairs of vscode-textmate (start, metadata) as pairs of start and style, adjacent equal styles merged. */
+function lineStyles(tokens: Uint32Array): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < tokens.length; i += 2) {
+    const meta = tokens[i + 1];
+    const style =
+      ((meta & FOREGROUND_MASK) >>> FOREGROUND_OFFSET) | (((meta & FONT_STYLE_MASK) >>> FONT_STYLE_OFFSET) << STYLE_COLOR_BITS);
+    if (out.length && out[out.length - 1] === style) continue;
+    out.push(tokens[i], style);
+  }
+  return out;
+}
+
+let onigLib: Promise<IOnigLib> | undefined;
+
+function loadOniguruma(extensionPath: string): Promise<IOnigLib> {
+  return (onigLib ??= fs.promises.readFile(path.join(extensionPath, 'dist', 'onig.wasm')).then(async (wasm) => {
+    await oniguruma.loadWASM(wasm);
+    return {
+      createOnigScanner: (patterns) => new oniguruma.OnigScanner(patterns),
+      createOnigString: (s) => new oniguruma.OnigString(s),
+    };
+  }));
+}
+
+async function loadSyntax(extensionPath: string): Promise<Syntax | undefined> {
   const theme = activeTheme();
-  if (!theme) return '';
-  const rules = [...(await loadRules(theme.file)), ...customizationRules(theme.settingsId)];
-  return CATEGORIES.map(({ selector, scopes, fontStyle }) => {
-    const style = resolveStyle(rules, scopes);
-    const fs = style.fontStyle ?? fontStyle ?? '';
-    const css = [
-      `color:${style.color ?? 'var(--vscode-editor-foreground)'}`,
-      `font-style:${fs.includes('italic') ? 'italic' : 'normal'}`,
-      `font-weight:${fs.includes('bold') ? 'bold' : 'normal'}`,
-      `text-decoration:${[fs.includes('underline') && 'underline', fs.includes('strikethrough') && 'line-through'].filter(Boolean).join(' ') || 'none'}`,
-    ];
-    const selectors = selector.split(',').map((s) => `.code-view.hljs ${s.trim()}`);
-    return `${selectors.join(',')}{${css.join(';')}}`;
-  }).join('\n');
+  if (!theme) return undefined;
+  const { rules, colors } = await loadTheme(theme.file);
+  const settings: TokenRule[] = [];
+  // As in VS Code, tokens that no rule colors take the editor foreground.
+  const foreground = colors['editor.foreground'];
+  if (typeof foreground === 'string') settings.push({ settings: { foreground } });
+  settings.push(...rules, ...customizationRules(theme.settingsId));
+  const grammars = new Grammars();
+  const registry = new Registry({
+    onigLib: loadOniguruma(extensionPath),
+    theme: { settings },
+    loadGrammar: async (scope) => {
+      const file = grammars.fileOf(scope);
+      return file ? parseRawGrammar(await fs.promises.readFile(file, 'utf8'), file) : null;
+    },
+    getInjections: (scope) => grammars.injectionsFor(scope),
+  });
+  // Index 1 is the default color: left to the editor foreground of the workbench, which also
+  // follows `workbench.colorCustomizations`.
+  const css = registry
+    .getColorMap()
+    .map((color, i) => (i > 1 ? `.code-view .mtk${i}{color:${color}}` : ''))
+    .filter(Boolean)
+    .join('\n');
+  return { registry, grammars, css };
 }
 
 /** The color theme in use, found among the themes contributed by the installed extensions. */
@@ -182,21 +217,27 @@ function activeTheme(): { file: string; settingsId: string } | undefined {
   return undefined;
 }
 
-/** The token color rules of a theme file, following `include` and tmTheme references. */
-async function loadRules(file: string, depth = 0): Promise<TokenRule[]> {
-  if (depth > 10) return [];
+/** The token color rules and the workbench colors of a theme file, following `include` and tmTheme references. */
+async function loadTheme(file: string, depth = 0): Promise<{ rules: TokenRule[]; colors: Record<string, unknown> }> {
+  if (depth > 10) return { rules: [], colors: {} };
   const text = await fs.promises.readFile(file, 'utf8');
   if (/\.tmTheme$/i.test(file) || text.trimStart().startsWith('<')) {
     const plist = parsePlist(text) as { settings?: TokenRule[] } | undefined;
-    return Array.isArray(plist?.settings) ? plist.settings : [];
+    return { rules: Array.isArray(plist?.settings) ? plist.settings : [], colors: {} };
   }
-  const json = parseJsonc(text) as { include?: unknown; tokenColors?: unknown };
+  const json = parseJsonc(text) as { include?: unknown; tokenColors?: unknown; colors?: unknown };
   const dir = path.dirname(file);
   const rules: TokenRule[] = [];
-  if (typeof json.include === 'string') rules.push(...(await loadRules(path.resolve(dir, json.include), depth + 1)));
-  if (typeof json.tokenColors === 'string') rules.push(...(await loadRules(path.resolve(dir, json.tokenColors), depth + 1)));
+  const colors: Record<string, unknown> = {};
+  if (typeof json.include === 'string') {
+    const base = await loadTheme(path.resolve(dir, json.include), depth + 1);
+    rules.push(...base.rules);
+    Object.assign(colors, base.colors);
+  }
+  if (typeof json.tokenColors === 'string') rules.push(...(await loadTheme(path.resolve(dir, json.tokenColors), depth + 1)).rules);
   else if (Array.isArray(json.tokenColors)) rules.push(...json.tokenColors);
-  return rules;
+  if (json.colors && typeof json.colors === 'object') Object.assign(colors, json.colors);
+  return { rules, colors };
 }
 
 /** Rules from `editor.tokenColorCustomizations`: the general ones, then the ones for this theme. */
@@ -223,47 +264,6 @@ function customizationRules(settingsId: string): TokenRule[] {
     }
   }
   return rules;
-}
-
-/**
- * The style a theme gives to the first of `scopes` it has a color for, matching rule selectors
- * as TextMate does for a token with that single scope: the selector with the longest matching
- * prefix wins and later rules win ties. Color and font style are resolved separately.
- */
-export function resolveStyle(rules: TokenRule[], scopes: string[]): TokenStyle {
-  for (const scope of scopes) {
-    const color = bestSetting(rules, scope, 'foreground');
-    if (color) return { color, fontStyle: bestSetting(rules, scope, 'fontStyle') };
-  }
-  return { fontStyle: scopes.length ? bestSetting(rules, scopes[0], 'fontStyle') : undefined };
-}
-
-function bestSetting(rules: TokenRule[], scope: string, key: 'foreground' | 'fontStyle'): string | undefined {
-  let best: string | undefined;
-  let bestScore = 0;
-  for (const rule of rules) {
-    const value = rule.settings?.[key];
-    if (typeof value !== 'string' || (key === 'foreground' && !COLOR.test(value)) || !rule.scope) continue;
-    const selectors = Array.isArray(rule.scope) ? rule.scope : rule.scope.split(',');
-    for (const selector of selectors) {
-      const score = selectorScore(selector, scope);
-      if (score && score >= bestScore) {
-        best = value;
-        bestScore = score;
-      }
-    }
-  }
-  return best;
-}
-
-/** How specifically `selector` matches `scope` (dot-separated segments), 0 when it does not. */
-function selectorScore(selector: string, scope: string): number {
-  const [include, ...excludes] = selector.split(/\s+-\s+/).map((s) => s.trim());
-  // Selectors with parent scopes need the token's full scope stack, which the preview does not have.
-  if (!include || /\s/.test(include)) return 0;
-  const prefixOf = (sel: string) => scope === sel || scope.startsWith(sel + '.');
-  if (!prefixOf(include) || excludes.some(prefixOf)) return 0;
-  return include.split('.').length;
 }
 
 function escapeRegExp(s: string): string {

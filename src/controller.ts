@@ -90,7 +90,7 @@ export class SearchController implements vscode.Disposable {
         await this.runSearch(msg.searchId);
         break;
       case 'preview':
-        this.post({ type: 'preview', reqId: msg.reqId, data: await readPreview(msg.path, msg.folder) });
+        this.post({ type: 'preview', reqId: msg.reqId, data: await readPreview(msg.path, msg.folder, this.services.theme) });
         break;
       case 'open':
         await this.open(msg);
@@ -196,7 +196,7 @@ export class SearchController implements vscode.Disposable {
   }
 }
 
-async function readPreview(abs: string, folder: boolean): Promise<PreviewData> {
+async function readPreview(abs: string, folder: boolean, theme: SyntaxTheme): Promise<PreviewData> {
   const rel = vscode.workspace.asRelativePath(abs, (vscode.workspace.workspaceFolders?.length ?? 0) > 1);
   try {
     const stat = await fs.promises.stat(abs);
@@ -215,7 +215,8 @@ async function readPreview(abs: string, folder: boolean): Promise<PreviewData> {
     }
     const open = vscode.workspace.textDocuments.find((d) => d.uri.scheme === 'file' && d.uri.fsPath === abs);
     if (open?.isDirty) {
-      return { kind: 'file', path: abs, rel, content: open.getText() };
+      const content = open.getText();
+      return { kind: 'file', path: abs, rel, content, tokens: await theme.tokenize(abs, content, open.languageId) };
     }
     if (stat.size > MAX_PREVIEW_BYTES) {
       return { kind: 'error', path: abs, rel, message: `File too large to preview (${(stat.size / 1048576).toFixed(1)} MB).` };
@@ -224,7 +225,8 @@ async function readPreview(abs: string, folder: boolean): Promise<PreviewData> {
     if (buf.subarray(0, 8000).includes(0)) {
       return { kind: 'error', path: abs, rel, message: 'Binary file: no preview available.' };
     }
-    return { kind: 'file', path: abs, rel, content: buf.toString('utf8').replace(/^﻿/, '') };
+    const content = buf.toString('utf8').replace(/^﻿/, '');
+    return { kind: 'file', path: abs, rel, content, tokens: await theme.tokenize(abs, content, open?.languageId) };
   } catch (err) {
     return { kind: 'error', path: abs, rel, message: err instanceof Error ? err.message : String(err) };
   }
