@@ -2,7 +2,7 @@
   "name": "search-here",
   "displayName": "Search Here",
   "description": "Fast search for text, files, folders and symbols powered by ripgrep, with code preview, saved scopes and include/exclude filters.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "RiccardoFilippozzi",
   "license": "MIT",
   "repository": {
