@@ -319,10 +319,3 @@ function describeScope(paths: string[], include: string[], exclude: string[]): s
   if (exclude.length) parts.push(`Exclude: ${exclude.join(', ')}`);
   return parts.join(' · ');
 }
-
-export function columnBesides(column: vscode.ViewColumn | undefined): vscode.ViewColumn {
-  // Prefer an editor group other than the one hosting the search tab.
-  const groups = vscode.window.tabGroups.all;
-  const other = groups.find((g) => g.viewColumn !== column);
-  return other ? other.viewColumn : vscode.ViewColumn.Active;
-}

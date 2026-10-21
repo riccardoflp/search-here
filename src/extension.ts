@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { columnBesides, SearchController, Services } from './controller';
+import { SearchController, Services } from './controller';
 import { relativeInside, SearchEngine } from './engine';
 import { FileIndex } from './fileIndex';
 import { addPattern, patternForPath, removePattern } from './globs';
@@ -82,7 +82,8 @@ export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
     const controller = new SearchController(
       panel.webview,
       services,
-      () => columnBesides(panel.viewColumn),
+      // Results open as a new tab in the search tab's own group.
+      () => panel.viewColumn ?? vscode.ViewColumn.Active,
       (q) => (panel.title = q.trim() ? `Search: ${q.trim()}` : 'Search Here'),
     );
     const tab: EditorTab = { panel, controller };
