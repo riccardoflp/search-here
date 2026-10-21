@@ -37,7 +37,7 @@ If text is selected in the editor, it becomes the query.
 
 ## Preview
 
-Use `↑` `↓` to move through the results: the right side shows the file with syntax highlighting, the result line highlighted and every match marked. Folders show their content, which you can browse by clicking.
+Use `↑` `↓` to move through the results: the right side shows the file with syntax highlighting in the colors of your color theme (and your `editor.tokenColorCustomizations`), the result line highlighted and every match marked. Folders show their content, which you can browse by clicking.
 
 `Enter` opens, `Ctrl+Enter` opens to the side, double-clicking a line in the preview opens the file at that line.
 

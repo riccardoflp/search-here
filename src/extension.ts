@@ -7,21 +7,24 @@ import { addPattern, patternForPath, removePattern } from './globs';
 import { Mode } from './protocol';
 import { nextQuickMode, quickSearch } from './quickPick';
 import { Store } from './state';
+import { SyntaxTheme } from './theme';
 
 /** Returned by `activate`; used by the integration tests to reach the engine and the stored options. */
 export interface SearchHereApi {
   store: Store;
   engine: SearchEngine;
   index: FileIndex;
+  theme: SyntaxTheme;
 }
 
 export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
   const index = new FileIndex();
   const store = new Store(ctx);
   const engine = new SearchEngine(index);
-  const services: Services = { ctx, store, engine };
+  const theme = new SyntaxTheme();
+  const services: Services = { ctx, store, engine, theme };
   const controllers = new Set<SearchController>();
-  ctx.subscriptions.push(index, store);
+  ctx.subscriptions.push(index, store, theme);
 
   // "Active Folder" follows the last focused text editor.
   const trackEditor = (editor: vscode.TextEditor | undefined) => {
@@ -266,7 +269,7 @@ export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
 
   register('searchHere.clearFilters', () => store.setOptions({ include: '', exclude: '' }, { rerun: true }));
 
-  return { store, engine, index };
+  return { store, engine, index, theme };
 }
 
 function selectedText(): string | undefined {

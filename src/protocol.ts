@@ -97,7 +97,9 @@ export type ToWebview =
   | { type: 'results'; searchId: number; items: ResultItem[] }
   | { type: 'done'; searchId: number; stats: SearchStats }
   | { type: 'preview'; reqId: number; data: PreviewData }
-  | { type: 'focus'; query?: string };
+  | { type: 'focus'; query?: string }
+  /** Syntax colors of the active color theme, as CSS; empty to use the defaults. */
+  | { type: 'syntax'; css: string };
 
 export type FromWebview =
   | { type: 'ready' }

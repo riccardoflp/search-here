@@ -745,6 +745,7 @@ body.dragging .splitter {
 }
 
 /* ------------------------------------------------------------------ syntax colors (Dark+ / Light+) */
+/* Used until the extension sends the colors of the active theme, or when it cannot read them. */
 
 .vscode-dark .hljs-keyword,
 .vscode-dark .hljs-literal,
@@ -802,6 +803,9 @@ body.dragging .splitter {
 }
 .vscode-dark .hljs-deletion {
   color: #ce9178;
+}
+.vscode-dark .hljs-keyword.sh-control {
+  color: #c586c0;
 }
 
 .vscode-light .hljs-keyword,
@@ -862,6 +866,9 @@ body.dragging .splitter {
 }
 .vscode-light .hljs-deletion {
   color: #a31515;
+}
+.vscode-light .hljs-keyword.sh-control {
+  color: #af00db;
 }
 
 .vscode-high-contrast .hljs-keyword,

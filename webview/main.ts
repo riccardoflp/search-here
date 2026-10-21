@@ -887,6 +887,21 @@ function guessLanguage(path: string): string | undefined {
   return name && hljs.getLanguage(name) ? name : undefined;
 }
 
+const CONTROL_KEYWORDS = new RegExp(
+  `<span class="hljs-keyword">(${[
+    'if', 'else', 'elif', 'elsif', 'unless', 'then', 'fi', 'for', 'foreach', 'while', 'until', 'do', 'done', 'loop',
+    'switch', 'case', 'esac', 'default', 'match', 'when', 'break', 'continue', 'return', 'goto', 'try', 'catch',
+    'except', 'finally', 'throw', 'raise', 'yield', 'await', 'import', 'export', 'from', 'as', 'using', 'include',
+    'require', 'pass', 'defer', 'go', 'select', 'fallthrough',
+  ].join('|')})</span>`,
+  'g',
+);
+
+/** Tells control flow keywords apart: themes usually color them differently from declarations. */
+function markControlKeywords(html: string): string {
+  return html.replace(CONTROL_KEYWORDS, '<span class="hljs-keyword sh-control">$1</span>');
+}
+
 /** Splits highlight.js HTML into per-line HTML, closing and reopening spans at line breaks. */
 function splitHtmlLines(html: string): string[] {
   const out: string[] = [];
@@ -947,7 +962,7 @@ function renderPreview(data: PreviewData, target: PreviewTarget): void {
   let html: string[];
   if (lang && text.length <= MAX_HIGHLIGHT_CHARS) {
     try {
-      html = splitHtmlLines(hljs.highlight(text, { language: lang, ignoreIllegals: true }).value);
+      html = splitHtmlLines(markControlKeywords(hljs.highlight(text, { language: lang, ignoreIllegals: true }).value));
     } catch {
       html = slice.map(esc);
     }
@@ -1099,6 +1114,10 @@ $('splitter').addEventListener('mousedown', (e) => {
 
 // ====================================================================== messages
 
+// Syntax colors of the user's theme. A constructed style sheet, since the CSP forbids inline styles.
+const syntaxSheet = new CSSStyleSheet();
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, syntaxSheet];
+
 window.addEventListener('message', (event: MessageEvent<ToWebview>) => {
   const msg = event.data;
   switch (msg.type) {
@@ -1141,6 +1160,9 @@ window.addEventListener('message', (event: MessageEvent<ToWebview>) => {
       break;
     case 'preview':
       onPreview(msg.reqId, msg.data);
+      break;
+    case 'syntax':
+      syntaxSheet.replaceSync(msg.css);
       break;
     case 'focus':
       if (msg.query !== undefined && msg.query !== options.query) {

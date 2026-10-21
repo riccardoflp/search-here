@@ -4,11 +4,13 @@ import { relativeInside, SearchEngine } from './engine';
 import { patternForPath, splitPatterns } from './globs';
 import { DirEntry, FromWebview, Options, PreviewData, ScopeDef, ToWebview } from './protocol';
 import { Store } from './state';
+import { SyntaxTheme } from './theme';
 
 export interface Services {
   ctx: vscode.ExtensionContext;
   store: Store;
   engine: SearchEngine;
+  theme: SyntaxTheme;
 }
 
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
@@ -41,6 +43,7 @@ export class SearchController implements vscode.Disposable {
         if (e.options) this.post({ type: 'options', options: services.store.options, rerun: !!e.rerun });
         if (e.scopes) this.post({ type: 'scopes', scopes: services.store.scopes() });
       }),
+      services.theme.onDidChange((css) => this.post({ type: 'syntax', css })),
     );
   }
 
@@ -73,6 +76,7 @@ export class SearchController implements vscode.Disposable {
       case 'ready':
         this.ready = true;
         this.post({ type: 'init', options: store.options, scopes: store.scopes(), activeFolder: this.activeFolderLabel() });
+        void this.services.theme.get().then((css) => this.post({ type: 'syntax', css }));
         if (this.pendingFocus) {
           this.post({ type: 'focus', ...this.pendingFocus });
           this.pendingFocus = undefined;
