@@ -7,15 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The code preview is colored exactly as the editor colors the file: it is tokenized with the TextMate grammars of VS Code and of your extensions, and styled with your color theme and `editor.tokenColorCustomizations`. Variables, properties, function calls and every other token the theme colors now look as in the editor, for every language that has a grammar installed, and the language is found as VS Code finds it (including `files.associations`). The preview also uses the editor background.
-
 ## [0.2.0] - 2026-10-22
 
 ### Changed
 
-- The code preview uses the syntax colors of your color theme, including `editor.tokenColorCustomizations`, and follows theme changes. Control flow keywords (`if`, `return`, `import`…) are told apart from the other keywords, as most themes do.
+- The code preview is colored exactly as the editor colors the file: it is tokenized with the TextMate grammars of VS Code and of your extensions, and styled with your color theme and `editor.tokenColorCustomizations`, following theme changes. Variables, properties, function calls and every other token the theme colors look as in the editor, for every language that has a grammar installed, and the language is found as VS Code finds it (including `files.associations`). The preview also uses the editor background.
 - From a search in an editor tab, `Enter` and double click now open the result as a new tab in the same editor group, instead of in another group. `Ctrl`+`Enter` still opens it to the side.
 
 ### Fixed
