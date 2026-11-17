@@ -99,7 +99,7 @@ suite('Search engine (real ripgrep)', () => {
 
   test('an empty query lists every file in Files mode', async () => {
     const { files } = await search({ query: '', mode: 'files' });
-    assert.strictEqual(files.length, 7);
+    assert.strictEqual(files.length, 8);
   });
 
   test('All mode returns names and text together', async () => {

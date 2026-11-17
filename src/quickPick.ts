@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Services } from './controller';
+import { applyProject, describeProject, projectPickItems } from './projectPicker';
 import { Mode, ResultItem } from './protocol';
 
 const MODES: Mode[] = ['all', 'text', 'files', 'folders', 'symbols'];
@@ -12,6 +13,7 @@ const MODE_LABELS: Record<Mode, string> = {
   symbols: 'Symbols',
 };
 const MAX_TEXT_ITEMS = 500;
+const PLACEHOLDER = 'Search files, folders, text and symbols…  (Ctrl+Alt+P switches mode)';
 
 const SYMBOL_ICONS: Record<number, string> = {
   [vscode.SymbolKind.Class]: 'symbol-class',
@@ -32,6 +34,8 @@ const SYMBOL_ICONS: Record<number, string> = {
 
 interface Item extends vscode.QuickPickItem {
   result?: ResultItem;
+  /** While picking a project: the `Options.project` value. */
+  project?: string;
 }
 
 const openBeside: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('split-horizontal'), tooltip: 'Open to the Side' };
@@ -52,7 +56,7 @@ export function quickSearch(
   const { store, engine } = services;
   const qp = vscode.window.createQuickPick<Item>();
   let mode: Mode = 'all';
-  qp.placeholder = 'Search files, folders, text and symbols…  (Ctrl+Alt+P switches mode)';
+  qp.placeholder = PLACEHOLDER;
   qp.matchOnDescription = false;
   qp.matchOnDetail = false;
   qp.value = initial ?? '';
@@ -69,10 +73,54 @@ export function quickSearch(
     iconPath: new vscode.ThemeIcon('link-external'),
     tooltip: 'Open in an Editor Tab (filters, preview, scopes)',
   };
+  /** The project selector's label; undefined when there are no projects. */
+  let projectText: string | undefined;
+  const projectButton = (): vscode.QuickInputButton => ({
+    iconPath: new vscode.ThemeIcon('root-folder'),
+    tooltip: `Project: ${projectText} (click to change)`,
+  });
   const updateChrome = (status = '') => {
     const scope = store.scope(store.options.scopeId);
-    qp.title = `Search Here · ${MODE_LABELS[mode]} · ${scope.name}${status ? ' · ' + status : ''}`;
-    qp.buttons = [modeButton(), panelButton, editorButton];
+    const where = projectText ? ` · ${projectText}` : '';
+    qp.title = `Search Here · ${MODE_LABELS[mode]} · ${scope.name}${where}${status ? ' · ' + status : ''}`;
+    qp.buttons = projectText ? [modeButton(), projectButton(), panelButton, editorButton] : [modeButton(), panelButton, editorButton];
+  };
+  const refreshProject = async () => {
+    projectText = (await describeProject(services))?.label;
+    if (!picking) updateChrome();
+  };
+
+  // Picking a project happens in this same dialog: a second one would close it.
+  let picking = false;
+  let queryBeforePick = '';
+  const startPicking = async () => {
+    picking = true;
+    cts?.cancel();
+    if (debounce) clearTimeout(debounce);
+    if (renderTimer) clearTimeout(renderTimer);
+    renderTimer = undefined;
+    queryBeforePick = qp.value;
+    const { items, active } = await projectPickItems(services);
+    qp.value = '';
+    qp.title = 'Search Here · Project';
+    qp.placeholder = 'Pick the project to search in (Enter)';
+    qp.buttons = [];
+    qp.matchOnDescription = true;
+    qp.busy = false;
+    const mapped: Item[] = items.map((i) => ({ ...i, project: i.value }));
+    qp.items = mapped;
+    const current = active && mapped[items.indexOf(active)];
+    if (current) qp.activeItems = [current];
+  };
+  const stopPicking = async (value: string | undefined) => {
+    picking = false;
+    qp.placeholder = PLACEHOLDER;
+    qp.matchOnDescription = false;
+    qp.items = [];
+    qp.value = queryBeforePick;
+    if (value !== undefined) await applyProject(services, value);
+    await refreshProject();
+    run();
   };
 
   // Remember what was open so a cancelled search leaves the editor as it was.
@@ -214,6 +262,7 @@ export function quickSearch(
 
   current = {
     nextMode() {
+      if (picking) return;
       mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
       updateChrome();
       run();
@@ -221,10 +270,16 @@ export function quickSearch(
   };
   void vscode.commands.executeCommand('setContext', 'searchHere.quickOpen', true);
 
-  qp.onDidChangeValue(schedule);
-  qp.onDidChangeActive((items) => preview(items[0]));
+  qp.onDidChangeValue(() => {
+    if (!picking) schedule();
+  });
+  qp.onDidChangeActive((items) => {
+    if (!picking) preview(items[0]);
+  });
   qp.onDidTriggerButton((b) => {
-    if (b === panelButton || b === editorButton) {
+    if (b.iconPath instanceof vscode.ThemeIcon && b.iconPath.id === 'root-folder') {
+      void startPicking();
+    } else if (b === panelButton || b === editorButton) {
       accepted = true;
       qp.hide();
       openFull(qp.value, mode, b === panelButton ? 'panel' : 'editor');
@@ -239,6 +294,10 @@ export function quickSearch(
     await open(e.item.result, true);
   });
   qp.onDidAccept(async () => {
+    if (picking) {
+      await stopPicking(qp.activeItems[0]?.project);
+      return;
+    }
     const r = qp.selectedItems[0]?.result ?? qp.activeItems[0]?.result;
     if (!r) return;
     accepted = true;
@@ -272,6 +331,7 @@ export function quickSearch(
 
   updateChrome();
   qp.show();
+  void refreshProject();
   if (qp.value) run();
 }
 

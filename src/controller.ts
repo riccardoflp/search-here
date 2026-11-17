@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { relativeInside, SearchEngine } from './engine';
 import { patternForPath, splitPatterns } from './globs';
+import { describeProject, pickProject, showPick } from './projectPicker';
+import { projectLabel, resolveProjectRef } from './projects';
 import { DirEntry, FromWebview, Options, PreviewData, ScopeDef, ToWebview } from './protocol';
 import { Store } from './state';
 import { SyntaxTheme } from './theme';
@@ -25,6 +27,8 @@ export class SearchController implements vscode.Disposable {
   private readonly subs: vscode.Disposable[] = [];
   private ready = false;
   private pendingFocus?: { query?: string };
+  /** Folder of the project searched last, to search again when "Current project" moves. */
+  private lastProject?: string;
 
   constructor(
     private readonly webview: vscode.Webview,
@@ -41,7 +45,9 @@ export class SearchController implements vscode.Disposable {
       webview.onDidReceiveMessage((msg: FromWebview) => this.onMessage(msg)),
       services.store.onDidChange((e) => {
         if (e.options) this.post({ type: 'options', options: services.store.options, rerun: !!e.rerun });
-        if (e.scopes) this.post({ type: 'scopes', scopes: services.store.scopes() });
+        // Which scopes are shown depends on the project too.
+        this.post({ type: 'scopes', scopes: services.store.scopes() });
+        void this.postProject();
       }),
       services.theme.onDidChange((css) => this.post({ type: 'syntax', css })),
     );
@@ -59,6 +65,21 @@ export class SearchController implements vscode.Disposable {
 
   notifyActiveFolder(): void {
     this.post({ type: 'activeFolder', rel: this.activeFolderLabel() });
+    void this.postProject(true);
+  }
+
+  /** Updates the project selector; with `follow`, searches again if "Current project" moved. */
+  private async postProject(follow = false): Promise<void> {
+    if (!this.ready) return;
+    const { store, engine } = this.services;
+    const options = store.options;
+    this.post({ type: 'project', project: await describeProject(this.services) });
+    if (follow) {
+      const effective = await engine.project(options, store.scope(options.scopeId));
+      if (effective.source === 'current' && effective.dir !== this.lastProject) {
+        this.post({ type: 'options', options: store.options, rerun: true });
+      }
+    }
   }
 
   private post(msg: ToWebview): void {
@@ -76,6 +97,7 @@ export class SearchController implements vscode.Disposable {
       case 'ready':
         this.ready = true;
         this.post({ type: 'init', options: store.options, scopes: store.scopes(), activeFolder: this.activeFolderLabel() });
+        void this.postProject();
         void this.services.theme.get().then((css) => this.post({ type: 'syntax', css }));
         if (this.pendingFocus) {
           this.post({ type: 'focus', ...this.pendingFocus });
@@ -104,7 +126,7 @@ export class SearchController implements vscode.Disposable {
         break;
       case 'searchIn': {
         const rel = vscode.workspace.asRelativePath(msg.path, false);
-        await store.setOptions({ include: patternForPath(rel, msg.folder), scopeId: 'project' }, { rerun: true });
+        await store.setOptions({ include: patternForPath(rel, msg.folder), scopeId: 'project', project: '' }, { rerun: true });
         break;
       }
       case 'saveScope':
@@ -119,6 +141,9 @@ export class SearchController implements vscode.Disposable {
         if (ok) await store.deleteScope(msg.id);
         break;
       }
+      case 'pickProject':
+        await pickProject(this.services);
+        break;
       case 'openSettings':
         await vscode.commands.executeCommand('workbench.action.openSettings', 'searchHere');
         break;
@@ -132,11 +157,13 @@ export class SearchController implements vscode.Disposable {
     this.search = cts;
     const { store, engine } = this.services;
     const options = store.options;
+    const scope = store.scope(options.scopeId);
     this.onQuery?.(options.query);
     try {
+      this.lastProject = (await engine.project(options, scope)).dir;
       const stats = await engine.search(
         options,
-        store.scope(options.scopeId),
+        scope,
         (items) => {
           if (!cts.token.isCancellationRequested) this.post({ type: 'results', searchId, items });
         },
@@ -262,12 +289,37 @@ async function saveCurrentAsScope(services: Services, activeFolder: string | nul
   if (!name) return;
   const where = await vscode.window.showQuickPick(
     [
-      { label: '$(bookmark) This project', description: 'saved in the workspace', target: 'workspace' as const },
-      { label: '$(globe) All projects', description: 'saved for the user', target: 'global' as const },
+      { label: '$(bookmark) This workspace', description: 'saved in the workspace', target: 'workspace' as const },
+      { label: '$(globe) All workspaces', description: 'saved for the user', target: 'global' as const },
     ],
     { title: `Where should "${name.trim()}" be saved?` },
   );
   if (!where) return;
+
+  // Searching in a project: the new scope can stay bound to it, with paths relative to it.
+  let project = current.project;
+  if (!project) {
+    const effective = await services.engine.project(options, current);
+    if (effective.dir) {
+      const label = projectLabel(effective.dir);
+      const bind = await vscode.window.showQuickPick(
+        [
+          { label: `$(package) Only in ${label}`, description: 'folders relative to it, hidden while another project is picked', bind: true },
+          { label: '$(root-folder) In the selected project', description: 'follows the project selector', bind: false },
+        ],
+        { title: `Should "${name.trim()}" always search in ${label}?` },
+      );
+      if (!bind) return;
+      if (bind.bind) {
+        project = where.target === 'global' ? effective.dir : label;
+        const root = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(effective.dir));
+        const projectRel = root ? relativeInside(root.uri.fsPath, effective.dir) : null;
+        if (projectRel) {
+          paths = paths.map((p) => (p === projectRel ? '' : p.startsWith(projectRel + '/') ? p.slice(projectRel.length + 1) : p)).filter(Boolean);
+        }
+      }
+    }
+  }
 
   const scope: ScopeDef = {
     id: `${where.target}:${Date.now().toString(36)}`,
@@ -277,6 +329,8 @@ async function saveCurrentAsScope(services: Services, activeFolder: string | nul
     paths,
     include: include.length ? include : current.include,
     exclude: [...new Set([...current.exclude, ...exclude])],
+    project,
+    requires: current.requires,
   };
   await store.saveScope(scope);
   await store.setOptions({ scopeId: scope.id, include: '', exclude: '' }, { rerun: true });
@@ -302,12 +356,46 @@ async function editScope(services: Services, id: string): Promise<void> {
   const exclude = await ask('exclude', scope.exclude.join(', '), 'e.g. **/*.test.ts, dist/');
   if (exclude === undefined) return;
 
+  let project = scope.project;
+  const projects = await store.projects.list();
+  if (projects.length || project) {
+    const items: { label: string; description?: string; value?: string }[] = [
+      { label: '$(root-folder) Any project', description: 'follows the project selector', value: undefined },
+    ];
+    if (project && !projects.some((p) => p.path === resolveProjectRef(project!))) {
+      items.push({ label: `$(package) ${scope.projectLabel ?? project}`, description: 'current', value: project });
+    }
+    items.push(
+      ...projects.map((p) => ({
+        label: `$(${p.kind === 'folder' ? 'folder' : 'package'}) ${p.name}`,
+        description: p.marker,
+        value: scope.kind === 'global' ? p.path : p.name,
+      })),
+    );
+    const bound = project ? resolveProjectRef(project) : null;
+    const picked = await showPick(items, {
+      title: `Edit "${scope.name}" — project`,
+      placeholder: 'The project this scope always searches in (its folders are relative to it)',
+      active: items.find((i) => (i.value ? i.value === project || resolveProjectRef(i.value) === bound : !project)),
+    });
+    if (!picked) return;
+    project = picked.value;
+  }
+  const requires = await ask(
+    'only in projects with',
+    (scope.requires ?? []).join(', '),
+    'Show the tab only where one of these files exists, e.g. package.json, *.csproj (empty = always)',
+  );
+  if (requires === undefined) return;
+
   await store.saveScope({
     ...scope,
     name: name.trim() || scope.name,
     paths: splitPatterns(paths),
     include: splitPatterns(include),
     exclude: splitPatterns(exclude),
+    project,
+    requires: splitPatterns(requires),
   });
   if (store.options.scopeId === id) {
     await store.setOptions({}, { rerun: true });

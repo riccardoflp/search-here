@@ -231,6 +231,37 @@ input::placeholder {
   opacity: 0.75;
 }
 
+/* Project selector, before the scope tabs. */
+.project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  align-self: center;
+  max-width: 40%;
+  height: 22px;
+  padding: 0 4px 0 7px;
+  margin-right: 4px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 3px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+}
+
+.project span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.project.locked {
+  color: var(--vscode-descriptionForeground);
+  border-style: dashed;
+}
+
 .tab-actions {
   display: none;
   gap: 1px;

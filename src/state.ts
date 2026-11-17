@@ -1,5 +1,7 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { splitPatterns } from './globs';
+import { CURRENT_PROJECT, folderHasAny, ProjectIndex, projectLabel, resolveProjectRef } from './projects';
 import { Options, ScopeDef } from './protocol';
 
 export const BUILTIN_SCOPES: ScopeDef[] = [
@@ -12,20 +14,27 @@ export const BUILTIN_SCOPES: ScopeDef[] = [
 const OPTIONS_KEY = 'searchHere.options';
 const SCOPES_KEY = 'searchHere.scopes';
 
-type StoredScope = Omit<ScopeDef, 'kind' | 'icon'>;
+type StoredScope = Omit<ScopeDef, 'kind' | 'icon' | 'projectLabel'>;
 
 /** Persistent state: panel options per workspace, saved scopes per workspace or global. */
 export class Store implements vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<{ options?: boolean; rerun?: boolean; scopes?: boolean }>();
   readonly onDidChange = this.emitter.event;
-  private readonly configSub: vscode.Disposable;
+  private readonly subs: vscode.Disposable[];
 
-  constructor(private readonly ctx: vscode.ExtensionContext) {
-    this.configSub = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('searchHere.scopes')) {
-        this.emitter.fire({ scopes: true });
-      }
-    });
+  constructor(
+    private readonly ctx: vscode.ExtensionContext,
+    readonly projects: ProjectIndex,
+  ) {
+    this.subs = [
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('searchHere.scopes')) {
+          this.emitter.fire({ scopes: true });
+        }
+      }),
+      // Scopes that require a file may show up or disappear with the projects.
+      projects.onDidChange(() => this.emitter.fire({ scopes: true })),
+    ];
   }
 
   get options(): Options {
@@ -42,10 +51,11 @@ export class Store implements vscode.Disposable {
       include: '',
       exclude: '',
       scopeId: 'project',
+      project: '',
     };
     const stored = this.ctx.workspaceState.get<Partial<Options>>(OPTIONS_KEY, {});
     const options = { ...defaults, ...stored };
-    if (!this.scopes().some((s) => s.id === options.scopeId)) {
+    if (!this.allScopes().some((s) => s.id === options.scopeId)) {
       options.scopeId = 'project';
     }
     return options;
@@ -59,7 +69,8 @@ export class Store implements vscode.Disposable {
     }
   }
 
-  scopes(): ScopeDef[] {
+  /** Every scope, including the ones hidden in the current project. */
+  allScopes(): ScopeDef[] {
     const fromSettings = vscode.workspace
       .getConfiguration('searchHere')
       .get<Partial<StoredScope>[]>('scopes', [])
@@ -72,6 +83,8 @@ export class Store implements vscode.Disposable {
         paths: splitPatterns(s.paths),
         include: splitPatterns(s.include),
         exclude: splitPatterns(s.exclude),
+        project: typeof s.project === 'string' && s.project.trim() ? s.project.trim() : undefined,
+        requires: splitPatterns(s.requires),
       }));
     const workspace = this.ctx.workspaceState
       .get<StoredScope[]>(SCOPES_KEY, [])
@@ -79,11 +92,48 @@ export class Store implements vscode.Disposable {
     const global = this.ctx.globalState
       .get<StoredScope[]>(SCOPES_KEY, [])
       .map<ScopeDef>((s) => ({ ...s, kind: 'global', icon: 'globe' }));
-    return [...BUILTIN_SCOPES, ...fromSettings, ...workspace, ...global];
+    return [...BUILTIN_SCOPES, ...fromSettings, ...workspace, ...global].map((s) => {
+      if (!s.project) return s;
+      const dir = resolveProjectRef(s.project);
+      return { ...s, projectLabel: dir ? projectLabel(dir) : s.project };
+    });
+  }
+
+  /**
+   * The scopes shown as tabs. A scope bound to a project is hidden while another project is picked,
+   * and one with `requires` is hidden where no project has those files. The active scope is
+   * always shown.
+   */
+  scopes(): ScopeDef[] {
+    const { project, scopeId } = this.options;
+    return this.allScopes().filter((s) => s.id === scopeId || this.visible(s, project));
+  }
+
+  private visible(s: ScopeDef, selected: string): boolean {
+    const picked = selected && selected !== CURRENT_PROJECT ? path.normalize(selected) : null;
+    let bound: string | null = null;
+    if (s.project) {
+      bound = resolveProjectRef(s.project);
+      // A global scope bound to a folder of another workspace.
+      if (!bound) return s.kind !== 'global';
+      if (picked && picked !== bound) return false;
+    }
+    if (s.requires?.length) {
+      const dirs = bound
+        ? [bound]
+        : picked
+          ? [picked]
+          : [
+              ...(vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file').map((f) => f.uri.fsPath),
+              ...this.projects.snapshot.map((p) => p.path),
+            ];
+      if (!dirs.some((d) => folderHasAny(d, s.requires!))) return false;
+    }
+    return true;
   }
 
   scope(id: string): ScopeDef {
-    return this.scopes().find((s) => s.id === id) ?? BUILTIN_SCOPES[0];
+    return this.allScopes().find((s) => s.id === id) ?? BUILTIN_SCOPES[0];
   }
 
   private memento(kind: 'workspace' | 'global'): vscode.Memento {
@@ -96,7 +146,10 @@ export class Store implements vscode.Disposable {
     }
     const memento = this.memento(scope.kind);
     const list = memento.get<StoredScope[]>(SCOPES_KEY, []).filter((s) => s.id !== scope.id);
-    list.push({ id: scope.id, name: scope.name, paths: scope.paths, include: scope.include, exclude: scope.exclude });
+    const stored: StoredScope = { id: scope.id, name: scope.name, paths: scope.paths, include: scope.include, exclude: scope.exclude };
+    if (scope.project) stored.project = scope.project;
+    if (scope.requires?.length) stored.requires = scope.requires;
+    list.push(stored);
     await memento.update(SCOPES_KEY, list);
     this.emitter.fire({ scopes: true });
   }
@@ -116,7 +169,7 @@ export class Store implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.configSub.dispose();
+    this.subs.forEach((s) => s.dispose());
     this.emitter.dispose();
   }
 }

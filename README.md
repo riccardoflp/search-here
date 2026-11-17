@@ -47,13 +47,40 @@ Use `↑` `↓` to move through the results: the right side shows the file color
 - **Open Files**: only the files open in editor tabs
 - **Git Changes**: modified, staged or untracked files
 - **Active Folder**: the folder of the file you were working on
-- **Saved scopes**: *Save Scope* turns the current scope and filters into a new tab, saved for this project or for all projects. Scopes can also be defined in `.vscode/settings.json` to share them with your team:
+- **Saved scopes**: *Save Scope* turns the current scope and filters into a new tab, saved for this workspace or for all workspaces. Scopes can also be defined in `.vscode/settings.json` to share them with your team:
 
 ```json
 "searchHere.scopes": [
   { "name": "Backend", "paths": ["server"], "exclude": ["**/*.test.ts"] }
 ]
 ```
+
+## Projects
+
+In a multi-root workspace, a monorepo or a folder of repositories, the **project selector** before the scope tabs restricts every scope to one project: *Git Changes* of the backend only, *Open Files* of one package, and so on. It offers:
+
+- **All projects**: the whole workspace
+- **Current project**: the project of the file you are working on, which follows you as you switch files
+- the **workspace folders** of a multi-root workspace
+- the **projects found inside them** by their marker files: `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `.git` (repositories, submodules, worktrees)… Folders ignored by `.gitignore` and `node_modules` are skipped
+
+The selector shows up only when there is a project to pick. **Search Here: Select Project** opens it from the Command Palette, and the quick search dialog has a button for it too.
+
+With a project picked, the folders of a scope are relative to it (a `src` scope searches the `src` of that project), while the *Include* / *Exclude* patterns stay relative to the workspace folder, as in the Explorer.
+
+Scopes can be tied to projects:
+
+- **Bound to a project**: the scope always searches in that project, and its tab is hidden while another project is picked. *Save Scope* offers this when you are searching in a project; *Edit* changes it
+- **Only in some projects**: the tab shows up only where a project has one of the given files, handy for scopes saved for all workspaces
+
+```json
+"searchHere.scopes": [
+  { "name": "API tests", "project": "packages/api", "paths": ["test"] },
+  { "name": "Rust sources", "include": ["*.rs"], "requires": ["Cargo.toml"] }
+]
+```
+
+`project` is a workspace folder name or a path relative to it (`backend/packages/api` in a multi-root workspace).
 
 ## Filters
 
@@ -104,6 +131,10 @@ Right-click files or folders (multi-selection works too) → **Search Here**:
 | `searchHere.followSymlinks` | `false` | Follow symbolic links |
 | `searchHere.ripgrepPath` | | Custom ripgrep executable |
 | `searchHere.scopes` | `[]` | Shareable scopes shown as tabs |
+| `searchHere.projects.workspaceFolders` | `true` | Offer the workspace folders of a multi-root workspace as projects |
+| `searchHere.projects.detect` | `true` | Find the projects inside the workspace folders by their marker files |
+| `searchHere.projects.markers` | `package.json`, `go.mod`, `.git`… | Files that make their folder a project |
+| `searchHere.projects.followActiveFile` | `true` | Offer *Current project*, which follows the active file |
 
 ## Development
 

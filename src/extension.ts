@@ -4,6 +4,8 @@ import { SearchController, Services } from './controller';
 import { relativeInside, SearchEngine } from './engine';
 import { FileIndex } from './fileIndex';
 import { addPattern, patternForPath, removePattern } from './globs';
+import { pickProject } from './projectPicker';
+import { ProjectIndex } from './projects';
 import { Mode } from './protocol';
 import { nextQuickMode, quickSearch } from './quickPick';
 import { Store } from './state';
@@ -14,17 +16,19 @@ export interface SearchHereApi {
   store: Store;
   engine: SearchEngine;
   index: FileIndex;
+  projects: ProjectIndex;
   theme: SyntaxTheme;
 }
 
 export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
   const index = new FileIndex();
-  const store = new Store(ctx);
-  const engine = new SearchEngine(index);
+  const projects = new ProjectIndex();
+  const store = new Store(ctx, projects);
+  const engine = new SearchEngine(index, projects);
   const theme = new SyntaxTheme(ctx.extensionPath);
   const services: Services = { ctx, store, engine, theme };
   const controllers = new Set<SearchController>();
-  ctx.subscriptions.push(index, store, theme);
+  ctx.subscriptions.push(index, projects, store, theme);
 
   // "Active Folder" follows the last focused text editor.
   const trackEditor = (editor: vscode.TextEditor | undefined) => {
@@ -221,11 +225,12 @@ export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
   register('searchHere.openEditor', () => openEditor(selectedText()));
   register('searchHere.quickSearch', () => quickSearch(services, selectedText(), openFull));
   register('searchHere.quickNextMode', () => nextQuickMode());
+  register('searchHere.selectProject', () => pickProject(services));
 
   register('searchHere.searchInFolder', async (uri?: vscode.Uri, uris?: vscode.Uri[]) => {
     const targets = await explorerTargets(uri, uris);
     const include = targets.filter((t) => !t.isRoot).map((t) => t.pattern).join(', ');
-    await store.setOptions({ include, scopeId: 'project' }, { rerun: true });
+    await store.setOptions({ include, scopeId: 'project', project: '' }, { rerun: true });
     await openTab();
   });
 
@@ -270,7 +275,7 @@ export function activate(ctx: vscode.ExtensionContext): SearchHereApi {
 
   register('searchHere.clearFilters', () => store.setOptions({ include: '', exclude: '' }, { rerun: true }));
 
-  return { store, engine, index, theme };
+  return { store, engine, index, projects, theme };
 }
 
 function selectedText(): string | undefined {

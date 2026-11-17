@@ -6,6 +6,7 @@ import type {
   Options,
   PathItem,
   PreviewData,
+  ProjectView,
   ResultItem,
   ScopeDef,
   SearchStats,
@@ -50,6 +51,7 @@ type Row =
 let options: Options;
 let scopes: ScopeDef[] = [];
 let activeFolder: string | null = null;
+let project: ProjectView | null = null;
 
 let searchId = 0;
 let searching = false;
@@ -227,15 +229,24 @@ function scopeTooltip(s: ScopeDef): string {
   if (s.id === 'open') return 'Only files open in editor tabs';
   if (s.id === 'git') return 'Only modified, staged or untracked files (Git)';
   if (s.id === 'activeFolder') return activeFolder ? `Folder of the active file: ${activeFolder}` : 'Folder of the active file (no file open)';
-  const parts = [s.paths.length ? `Folders: ${s.paths.join(', ')}` : 'Whole project'];
+  const parts: string[] = [];
+  if (s.project) parts.push(`Project: ${s.projectLabel ?? s.project}`);
+  parts.push(s.paths.length ? `Folders: ${s.paths.join(', ')}` : s.project ? 'Whole project' : 'Whole workspace');
   if (s.include.length) parts.push(`Include: ${s.include.join(', ')}`);
   if (s.exclude.length) parts.push(`Exclude: ${s.exclude.join(', ')}`);
-  const where = s.kind === 'global' ? 'all projects' : s.kind === 'settings' ? 'settings.json' : 'this project';
+  if (s.requires?.length) parts.push(`Only in projects with: ${s.requires.join(', ')}`);
+  const where = s.kind === 'global' ? 'all workspaces' : s.kind === 'settings' ? 'settings.json' : 'this workspace';
   return `${parts.join('\n')}\n(saved in ${where})`;
 }
 
 function renderScopes(): void {
-  const html = scopes.map((s) => {
+  const html: string[] = [];
+  if (project) {
+    html.push(
+      `<button class="project${project.locked ? ' locked' : ''}" id="project" title="${esc(project.tooltip)}">${icon(project.locked ? 'lock-small' : 'root-folder')}<span>${esc(project.label)}</span>${icon('chevron-down')}</button>`,
+    );
+  }
+  html.push(...scopes.map((s) => {
     const on = s.id === options.scopeId;
     const editable = s.kind !== 'builtin';
     const actions = editable
@@ -244,7 +255,7 @@ function renderScopes(): void {
         }</span>`
       : '';
     return `<button class="scope${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-scope="${esc(s.id)}" title="${esc(scopeTooltip(s))}">${icon(s.icon)}<span>${esc(s.name)}</span>${actions}</button>`;
-  });
+  }));
   html.push(`<button class="scope add" id="saveScope" title="Save the current scope and filters as a new tab">${icon('add')}<span>Save Scope</span></button>`);
   $('scopes').innerHTML = html.join('');
 
@@ -307,6 +318,7 @@ document.addEventListener('click', (e) => {
   const del = target.closest<HTMLElement>('[data-scope-del]');
   if (del) return post({ type: 'deleteScope', id: del.dataset.scopeDel! });
   if (target.closest('#saveScope')) return post({ type: 'saveScope' });
+  if (target.closest('#project')) return post({ type: 'pickProject' });
   const scope = target.closest<HTMLElement>('[data-scope]');
   if (scope && scope.dataset.scope !== options.scopeId) {
     options.scopeId = scope.dataset.scope!;
@@ -533,7 +545,9 @@ function renderEmpty(): void {
     const q = options.query.trim();
     if (!q && (options.mode === 'all' || options.mode === 'text' || options.mode === 'symbols')) {
       text = `<div class="hint-title">What are you looking for?</div>
-<div>Type to search in <b>${esc(scopes.find((s) => s.id === options.scopeId)?.name ?? '')}</b>.</div>
+<div>Type to search in <b>${esc(scopes.find((s) => s.id === options.scopeId)?.name ?? '')}</b>${
+        project && project.label !== 'All projects' ? ` · <b>${esc(project.label)}</b>` : ''
+      }.</div>
 <ul>
 <li><kbd>↑</kbd> <kbd>↓</kbd> move through results with the preview on the right</li>
 <li><kbd>Enter</kbd> opens · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> opens to the side</li>
@@ -1086,6 +1100,11 @@ window.addEventListener('message', (event: MessageEvent<ToWebview>) => {
     case 'scopes':
       scopes = msg.scopes;
       renderScopes();
+      break;
+    case 'project':
+      project = msg.project;
+      renderScopes();
+      if (!rows.length) renderEmpty();
       break;
     case 'activeFolder':
       activeFolder = msg.rel;

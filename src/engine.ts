@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { buildIndexData, FileIndex, IndexData } from './fileIndex';
 import { prepareQuery, rank } from './fuzzy';
 import { excludeGlobs, includeGlobs, splitPatterns } from './globs';
+import { CURRENT_PROJECT, followActiveFileEnabled, ProjectIndex, projectLabel, resolveProjectRef } from './projects';
 import { MatchItem, Options, PathItem, ResultItem, ScopeDef, SearchStats, SymbolItem } from './protocol';
 import { chunkPaths, normalizeRgPath, runRg, stderrSummary } from './rg';
 
@@ -31,20 +32,56 @@ const LIMITS = {
 
 const MAX_LINE_DISPLAY = 240;
 
+/** The project a search runs in. */
+export interface EffectiveProject {
+  /** Absolute path of its folder; undefined = the whole workspace. */
+  dir?: string;
+  /** Where it comes from: the scope's binding, the active file or the selector. */
+  source: 'all' | 'scope' | 'current' | 'picked';
+  /** The scope is bound to a project that does not exist. */
+  missing?: string;
+}
+
 export class SearchEngine {
   /** Folder of the last focused text editor (the search view itself steals focus). */
   activeFolder: string | null = null;
 
-  constructor(private readonly index: FileIndex) {}
+  constructor(
+    private readonly index: FileIndex,
+    readonly projects: ProjectIndex,
+  ) {}
+
+  /** The project to search in: the one the scope is bound to, else the one picked in the selector. */
+  async project(opts: Options, scope: ScopeDef): Promise<EffectiveProject> {
+    if (scope.project) {
+      const dir = resolveProjectRef(scope.project);
+      return dir ? { dir, source: 'scope' } : { source: 'scope', missing: scope.project };
+    }
+    if (opts.project === CURRENT_PROJECT) {
+      if (!followActiveFileEnabled()) return { source: 'all' };
+      const found = this.projects.containing(this.activeFolder, await this.projects.list());
+      return { dir: found?.path, source: 'current' };
+    }
+    if (opts.project) {
+      const dir = resolveProjectRef(opts.project);
+      if (dir) return { dir, source: 'picked' };
+    }
+    return { source: 'all' };
+  }
 
   async search(opts: Options, scope: ScopeDef, sink: Sink, token: vscode.CancellationToken): Promise<SearchStats> {
     const started = Date.now();
     const stats: SearchStats = { matches: 0, files: 0, ms: 0, truncated: false };
     const query = opts.query;
-    const targets = await this.targets(opts, scope);
+    const project = await this.project(opts, scope);
+    if (project.missing) {
+      stats.warning = `The project "${project.missing}" of this scope was not found.`;
+      return stats;
+    }
+    const targets = await this.targets(opts, scope, project.dir);
     if (token.isCancellationRequested) return stats;
     if (!targets.length) {
-      stats.warning = noTargetMessage(scope);
+      stats.warning = noTargetMessage(scope, project.dir);
       return stats;
     }
 
@@ -73,7 +110,7 @@ export class SearchEngine {
 
   // ---------------------------------------------------------------- targets
 
-  private async targets(opts: Options, scope: ScopeDef): Promise<Target[]> {
+  private async targets(opts: Options, scope: ScopeDef, projectDir: string | undefined): Promise<Target[]> {
     const roots = (vscode.workspace.workspaceFolders ?? [])
       .filter((f) => f.uri.scheme === 'file')
       .map((f) => f.uri.fsPath);
@@ -95,6 +132,14 @@ export class SearchEngine {
     const targets: Target[] = [];
 
     for (const root of roots) {
+      // The project folder relative to this root: '' for the root itself or no project.
+      let projectRel = '';
+      if (projectDir) {
+        const rel = relativeInside(root, projectDir);
+        if (rel === null) continue;
+        projectRel = rel;
+      }
+      const inProject = (rel: string) => !projectRel || rel === projectRel || rel.startsWith(projectRel + '/');
       const rootUri = vscode.Uri.file(root);
       const negatives = excludeGlobs([
         ...splitPatterns(opts.exclude),
@@ -108,13 +153,22 @@ export class SearchEngine {
       let paths: string[] = [];
       if (scope.id === 'activeFolder') {
         const rel = this.activeFolder ? relativeInside(root, this.activeFolder) : null;
-        if (rel === null) continue;
+        if (rel === null || !inProject(rel)) continue;
         paths = rel ? [rel] : [];
       } else if (scope.paths.length) {
-        paths = scope.paths
-          .map((p) => p.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, ''))
-          .filter((p) => p && fs.existsSync(path.join(root, p)));
+        // In a project, scope paths are relative to it; a workspace relative path inside it works too.
+        const found = new Set<string>();
+        for (const raw of scope.paths) {
+          const p = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+          if (!p) continue;
+          const candidates = projectRel ? [`${projectRel}/${p}`, ...(inProject(p) ? [p] : [])] : [p];
+          const hit = candidates.find((c) => fs.existsSync(path.join(root, c)));
+          if (hit) found.add(hit);
+        }
+        paths = [...found];
         if (!paths.length) continue;
+      } else if (projectRel) {
+        paths = [projectRel];
       }
 
       const primary = scopeInclude.length ? scopeInclude : workInclude;
@@ -448,17 +502,18 @@ async function gitChangedFiles(): Promise<string[]> {
   return [...files];
 }
 
-function noTargetMessage(scope: ScopeDef): string {
+function noTargetMessage(scope: ScopeDef, projectDir: string | undefined): string {
+  const inProject = projectDir ? ` in ${projectLabel(projectDir)}` : '';
   switch (scope.id) {
     case 'open':
-      return 'No open file matches the filters.';
+      return `No open file${inProject} matches the filters.`;
     case 'git':
-      return 'No changed files (or the Git repository has not loaded yet).';
+      return projectDir ? `No changed files${inProject}.` : 'No changed files (or the Git repository has not loaded yet).';
     case 'activeFolder':
-      return 'Open a file of the project to use "Active Folder".';
+      return projectDir ? `The active file is not${inProject}.` : 'Open a file of the project to use "Active Folder".';
     default:
       return vscode.workspace.workspaceFolders?.length
-        ? 'No file matches this scope.'
+        ? `No file matches this scope${inProject}.`
         : 'Open a folder or a workspace to search.';
   }
 }

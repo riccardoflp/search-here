@@ -33,6 +33,7 @@ export const DEFAULTS: Options = {
   include: '',
   exclude: '',
   scopeId: 'project',
+  project: '',
 };
 
 export interface Run {

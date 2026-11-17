@@ -79,6 +79,12 @@
         "category": "Search Here"
       },
       {
+        "command": "searchHere.selectProject",
+        "title": "Select Project",
+        "category": "Search Here",
+        "icon": "$(root-folder)"
+      },
+      {
         "command": "searchHere.searchInFolder",
         "title": "Search Here",
         "category": "Search Here"
@@ -297,6 +303,44 @@
           "default": "",
           "description": "Path to a custom ripgrep executable. Empty = the one bundled with VS Code."
         },
+        "searchHere.projects.workspaceFolders": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "In a multi-root workspace, offer each workspace folder as a project in the project selector."
+        },
+        "searchHere.projects.detect": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Find the projects inside the workspace folders (monorepo packages, folders of repositories…) by their marker files (`#searchHere.projects.markers#`) and offer them in the project selector."
+        },
+        "searchHere.projects.markers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "package.json",
+            "go.mod",
+            "Cargo.toml",
+            "pyproject.toml",
+            "setup.py",
+            "pom.xml",
+            "build.gradle",
+            "build.gradle.kts",
+            "*.csproj",
+            "composer.json",
+            "Gemfile",
+            "pubspec.yaml",
+            "mix.exs",
+            ".git"
+          ],
+          "markdownDescription": "Files that make the folder containing them a project (file names, `*` globs allowed). `.git` finds repositories, submodules and worktrees. Folders ignored by `.gitignore`, `node_modules` and `#searchHere.exclude#` are skipped."
+        },
+        "searchHere.projects.followActiveFile": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer *Current project* in the project selector: the project of the file you are working on, which changes as you switch files."
+        },
         "searchHere.scopes": {
           "type": "array",
           "default": [],
@@ -316,7 +360,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Folders or files (relative to the root) to search in"
+                "description": "Folders or files to search in, relative to the project (or to the workspace folder when the scope has no project)"
               },
               "include": {
                 "type": "array",
@@ -331,6 +375,17 @@
                   "type": "string"
                 },
                 "description": "Globs to exclude"
+              },
+              "project": {
+                "type": "string",
+                "markdownDescription": "Project the scope always searches in: a workspace folder name or a path relative to it (e.g. `packages/api`, or `backend/packages/api` in a multi-root workspace). The tab is hidden while another project is picked."
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "markdownDescription": "Show the tab only in projects that contain one of these files (e.g. `package.json`, `*.csproj`)."
               }
             }
           }

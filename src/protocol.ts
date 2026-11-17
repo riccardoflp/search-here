@@ -17,6 +17,11 @@ export interface Options {
   include: string;
   exclude: string;
   scopeId: string;
+  /**
+   * Project the search is restricted to: '' all of them, 'current' the one of the active file,
+   * else the absolute path of its folder.
+   */
+  project: string;
 }
 
 export type ScopeKind = 'builtin' | 'workspace' | 'global' | 'settings';
@@ -30,6 +35,23 @@ export interface ScopeDef {
   paths: string[];
   include: string[];
   exclude: string[];
+  /**
+   * Project the scope always searches in (its paths are relative to it): an absolute path, a
+   * workspace folder name or a workspace relative path.
+   */
+  project?: string;
+  /** Show the scope only in projects that contain one of these files (e.g. `package.json`). */
+  requires?: string[];
+  /** Display name of `project`, filled in by the extension. */
+  projectLabel?: string;
+}
+
+/** The project selector of the search view. */
+export interface ProjectView {
+  label: string;
+  tooltip: string;
+  /** The active scope is bound to a project, which wins over the selector. */
+  locked: boolean;
 }
 
 interface ItemBase {
@@ -110,6 +132,8 @@ export type ToWebview =
   | { type: 'options'; options: Options; rerun: boolean }
   | { type: 'scopes'; scopes: ScopeDef[] }
   | { type: 'activeFolder'; rel: string | null }
+  /** null hides the selector (nothing to choose from). */
+  | { type: 'project'; project: ProjectView | null }
   | { type: 'results'; searchId: number; items: ResultItem[] }
   | { type: 'done'; searchId: number; stats: SearchStats }
   | { type: 'preview'; reqId: number; data: PreviewData }
@@ -129,4 +153,5 @@ export type FromWebview =
   | { type: 'saveScope' }
   | { type: 'editScope'; id: string }
   | { type: 'deleteScope'; id: string }
+  | { type: 'pickProject' }
   | { type: 'openSettings' };

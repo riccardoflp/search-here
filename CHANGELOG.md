@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Projects**: a project selector before the scope tabs restricts every scope to one project of a multi-root workspace, a monorepo or a folder of repositories. It lists the workspace folders, the projects found inside them by their marker files (`package.json`, `go.mod`, `Cargo.toml`, `*.csproj`, `.git`… configurable in `searchHere.projects.markers`) and **Current project**, which follows the active file. Also available as **Search Here: Select Project** and from a button in the quick search dialog. Each behavior can be turned off in the `searchHere.projects.*` settings.
+- Scopes can be **bound to a project** (`"project"` in `searchHere.scopes`, or from *Save Scope* and *Edit*): they always search in it, with their folders relative to it, and are hidden while another project is picked.
+- Scopes can be shown **only in projects that have some files** (`"requires": ["Cargo.toml"]`), for scopes saved for all workspaces.
+
+### Changed
+
+- Saved scopes are saved for "this workspace" or "all workspaces" (they were called "this project" and "all projects").
+- **Search Here** from the Explorer and from a result goes back to all projects, since it names the folder to search.
+
 ## [0.2.0] - 2026-10-22
 
 ### Changed
